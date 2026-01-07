@@ -1,0 +1,39 @@
+# Quartus 编译产生的垃圾文件夹
+db/
+incremental_db/
+output_files/
+simulation/
+graybox_tmp/
+hc_output/
+
+# 各种编译产生的临时文件
+*.sof
+*.pof
+*.jam
+*.jbc
+*.ekp
+*.jic
+*.rbf
+*.sopcinfo
+*.html
+*.rpt
+*.summary
+*.smsg
+*.qws
+*.bak
+
+*.xml
+*.txt
+*.qiq
+*.md
+*.map
+*.inc
+*.lnk
+*.qbf
+*.bsf
+*.qsf
+*.bpf
+*.qpf
+
+# 即使是 undo 文件也不需要
+*.qdb/
