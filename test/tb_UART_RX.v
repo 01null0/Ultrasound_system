@@ -1,89 +1,118 @@
 `timescale 1ns / 1ps
 
 module tb_UART_RX();
-    // 输入信号
-    reg clk_50M;
-    reg rst_n;
-    reg rs232_rx;
+
+    // ----------------------------------------------------------------
+    // 1. 信号定义
+    // ----------------------------------------------------------------
+    reg         clk_50M;
+    reg         rst_n;
+    reg         rs232_rx;
     
-    // 输出信号
-    wire rx_done;
-    //wire [7:0] rx_data;
-    wire [2:0] command;
-    parameter BPS=8681;// 1/38400秒 ≈ 26041ns
-    // 实例化UART_RX模块
-    UART_RX uut (
-        .clk_50M(clk_50M),
-        .rst_n(rst_n),
-        .rs232_rx(rs232_rx),
-        .rx_done(rx_done),
-        //.rx_data(rx_data),
-        .command(command)
+    wire [23:0] rx_frame_data;
+    wire [ 2:0] command;
+    wire        frame_valid;
+
+    // ----------------------------------------------------------------
+    // 2. 参数定义 (必须与被测模块一致)
+    // ----------------------------------------------------------------
+    parameter CLK_FREQ   = 50_000_000;
+    parameter BAUD_RATE  = 19200;
+    
+    // 计算每一位的持续时间 (单位: ns)，用于仿真发送
+    // 1秒 / 19200 ≈ 52083 ns
+    localparam BIT_PERIOD_NS = 1_000_000_000 / BAUD_RATE;
+
+    // ----------------------------------------------------------------
+    // 3. 实例化被测模块 (DUT)
+    // ----------------------------------------------------------------
+    UART_RX #(
+        .CLK_FREQ(CLK_FREQ),
+        .BAUD_RATE(BAUD_RATE)
+    ) u_UART_RX (
+        .clk_50M      (clk_50M),
+        .rst_n        (rst_n),
+        .rs232_rx     (rs232_rx),
+        .rx_frame_data(rx_frame_data),
+        .command      (command),
+        .frame_valid  (frame_valid)
     );
-    
-    // 时钟生成：50MHz
+        wire [7:0] debug_byte_0=u_UART_RX.data_buf[0];
+    wire [7:0] debug_byte_1= u_UART_RX.data_buf[1];
+    wire [7:0] debug_byte_2= u_UART_RX.data_buf[2];
+
+    // ----------------------------------------------------------------
+    // 4. 时钟生成 (50MHz => 周期 20ns)
+    // ----------------------------------------------------------------
+    initial clk_50M = 0;
     always #10 clk_50M = ~clk_50M;
-    
-    // 任务：发送一个字节
-    task send_byte;
-        input [7:0] data;
+
+    // ----------------------------------------------------------------
+    // 5. UART 发送任务 (模拟串口发送一个字节)
+    // ----------------------------------------------------------------
+    task uart_send_byte;
+        input [7:0] send_data;
         integer i;
         begin
-            // 起始位
-            rs232_rx = 0;
-            #BPS; 
+            // 1. 发送起始位 (拉低)
+            rs232_rx = 1'b0;
+            #(BIT_PERIOD_NS); 
             
-            // 数据位
+            // 2. 发送8位数据 (低位先发)
             for (i = 0; i < 8; i = i + 1) begin
-                rs232_rx = data[i];
-                #BPS;
+                rs232_rx = send_data[i];
+                #(BIT_PERIOD_NS);
             end
             
-            // 停止位
-            rs232_rx = 1;
-            #BPS;
+            // 3. 发送停止位 (拉高)
+            rs232_rx = 1'b1;
+            #(BIT_PERIOD_NS);
         end
     endtask
-    
-    // 测试序列
+
+    // ----------------------------------------------------------------
+    // 6. 主测试流程
+    // ----------------------------------------------------------------
     initial begin
-        // 初始化信号
-        clk_50M = 0;
+        // --- 初始化 ---
         rst_n = 0;
-        rs232_rx = 1; // 空闲状态为高电平
+        rs232_rx = 1; // 串口空闲状态为高电平
+        #200;
+        rst_n = 1;
+        #200;
+
+        // --- 测试用例 1: 发送完整的一帧 ---
+        // 格式: [ 0x12 0x34 0x05 ]
+        // 期望结果: rx_frame_data = 123405, command = 5, frame_valid 产生脉冲
         
-        // 复位
-        #100 rst_n = 1;
+        $display("Time: %t, Start sending Frame 1...", $time);
         
-        // 等待一段时间
-        #1000;
+        uart_send_byte(8'h5B); // 发送 '[' (帧头)
+        uart_send_byte(8'h12); // Data 1
+        uart_send_byte(8'h34); // Data 2
+        uart_send_byte(8'h05); // Data 3 (最后3位是 101 => command=5)
+        uart_send_byte(8'h5D); // 发送 ']' (帧尾)
+
+        // 等待一段时间，让接收模块处理完成
+        #1000; 
+
+        // --- 测试用例 2: 发送另一帧 ---
+        // 格式: [ 0xAA 0xBB 0xF2 ] 
+        // 0xF2 = 1111_0010, 最低3位是 010 => command = 2
         
-        // 测试1：发送数据0x01
-        send_byte(8'h01);
+        $display("Time: %t, Start sending Frame 2...", $time);
         
-        // 等待处理完成
-        #100000;
+        uart_send_byte(8'h5B); // '['
+        uart_send_byte(8'hAA); 
+        uart_send_byte(8'hBB); 
+        uart_send_byte(8'hF2); 
+        uart_send_byte(8'h5D); // ']'
+
+        #5000;
         
-        // 测试2：发送数据0x02
-        send_byte(8'h02);
-        
-        // 等待处理完成
-        #100000;
-        
-        // 测试3：发送数据0x04
-        send_byte(8'h04);
-        
-        // 等待处理完成
-        #100000;
-        
-        // 测试4：发送无效数据
-        send_byte(8'hFF);
-        
-        // 等待处理完成
-        #100000;
-        
-        // 结束仿真
-        #100 $finish;
+        // --- 测试结束 ---
+        $display("Simulation Finished.");
+        $stop;
     end
-    
+
 endmodule

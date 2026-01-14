@@ -1,4 +1,4 @@
-`timescale 1ns / 1ps
+`timescale 1ns / 1ns
 
 module tb_Ultrasound_system;
 
@@ -45,40 +45,23 @@ module tb_Ultrasound_system;
     );
 
     // ============================================================
-    // 4. 【关键修正】重定义 Order_4s 参数以加速仿真
-    //    将秒级/毫秒级参数缩小，以便在短时间内观察到完整的 AD 采集过程
-    // ============================================================
-    // 4秒 -> 改为 1ms (足够长即可)
-    // defparam u_dut.inst4_Order_4s.Time_4s = 32'd50_000;
-
-    // // 10ms -> 改为 200us (10000个时钟)，缩短初始等待时间
-    // defparam u_dut.inst4_Order_4s.Time_10ms = 19'd10_000;
-
-    // // 6ms -> 改为 100us (5000个时钟)，AD 采样窗口长度
-    // defparam u_dut.inst4_Order_4s.Time_6ms = 19'd5_000;
-
-    // // 3ms -> 改为 50us (2500个时钟)，缩短盲区等待时间
-    // defparam u_dut.inst4_Order_4s.Time_3ms = 19'd2_500;
-
-    // // 1us -> 改为 50个时钟 (保持 1MHz 采样率不变，保证 SPI 时序正确)
-    // defparam u_dut.inst4_Order_4s.Time_1us = 16'd50;
-
-    // ============================================================
     // 5. 信号探针 (Debug Signals)
     // ============================================================
     wire [ 2:0] debug_command = u_dut.inst3_UART_RX.command;
     wire [ 2:0] debug_uart_state = u_dut.inst3_UART_RX.state;
     //Order_4S 状态
-    wire        debug_Exc_start = u_dut.inst4_Order_4s.Exc_start;
-    wire [ 2:0] debug_current_state = u_dut.inst4_Order_4s.current_state;
+    // wire        debug_Exc_start = u_dut.inst4_Order_4s.Exc_start;
+    // wire [ 2:0] debug_current_state = u_dut.inst4_Order_4s.current_state;
     // 观察 AD 采样到的数据
     wire [11:0] debug_ad_out_data = u_dut.inst9_AD.ad_out;
     wire        debug_ad_done = u_dut.inst9_AD.ad_done;
     //自相关数据
-    wire [11:0] debug_fifo_q = u_dut.inst_Echo_Correlation.fifo_q;
+    // wire [11:0] debug_fifo_q = u_dut.inst_Echo_Correlation.fifo_q;
     wire [19:0] debug_echo_tof = u_dut.inst_Echo_Correlation.echo_tof;
     wire [19:0] debug_global_cnt = u_dut.inst_Echo_Correlation.global_cnt;
-
+    //串口发送
+    wire debug_processing_done = u_dut.inst12_UART_TX.processing_done;//串口发送标识位
+    wire debug_UART_TX = u_dut.inst12_UART_TX.rs232_tx;
     //wire debug_c0=u_dut.inst6_pll.c0;
 
     // ============================================================
@@ -145,11 +128,11 @@ module tb_Ultrasound_system;
     // 添加这段逻辑：在系统产生启动脉冲（T0）时，强制复位读取索引
     always @(posedge u_dut.inst4_Order_4s.sys_start_pulse) begin
         ad_index = 0;
-        $display("[%0t] AD Simulation Model: Reset ad_index to 0 (New Cycle Start)", $time);
+        //$display("[%0t] AD Simulation Model: Reset ad_index to 0 (New Cycle Start)", $time);
     end
 
 
-    // 【新增逻辑】在 CS 下降沿（传输开始）加载当前索引的数据到移位寄存器
+    // 在 CS 下降沿（传输开始）加载当前索引的数据到移位寄存器
     always @(negedge ad_cs) begin
         // 构造 16 位数据帧：2位前导0 + 12位数据 + 2位后缀0
         // AD7352 需要 16 个时钟周期，数据位在中间
@@ -164,7 +147,7 @@ module tb_Ultrasound_system;
             spi_shift_reg <= 16'd0;  // 数据读完后发送 0
         end
 
-        $display("[%0t] AD Model: Loaded Data[%0d] = %h", $time, ad_index, ad_memory[ad_index]);
+        //$display("[%0t] AD Model: Loaded Data[%0d] = %h", $time, ad_index, ad_memory[ad_index]);
     end
 
 
@@ -201,21 +184,21 @@ module tb_Ultrasound_system;
         rst_n = 1;
         #1000;
 
-        $display("==================================================");
-        $display("Simulation Start: Ultrasound System");
-        $display("Data Source: ad_data.hex");
-        $display("Simulating 10ms cycle...");
-        $display("==================================================");
+        // $display("==================================================");
+        // $display("Simulation Start: Ultrasound System");
+        // $display("Data Source: ad_data.hex");
+        // $display("Simulating 10ms cycle...");
+        // $display("==================================================");
 
         // ========================================================
         // 阶段 1: 发送启动命令 0x01
         // ========================================================
-        $display("[%0t] Sending Command 0x01 (System Start)...", $time);
+        //$display("[%0t] Sending Command 0x01 (System Start)...", $time);
         send_tbs_byte(8'h01);
 
         // 等待命令解析完成
         wait (debug_command == 3'h1);
-        $display("[%0t] Command Received. System Starting...", $time);
+        //$display("[%0t] Command Received. System Starting...", $time);
 
         // ========================================================
         // 阶段 2: 运行 10ms 周期

@@ -52,7 +52,7 @@ module Ultrasound_system (
     // ========================================================
 
     // 1. TBS Receiver Interface
-    TBS_RX inst2_TBS_RX (
+    UART_RX_8bit inst2_TBS_RX (
         .clk_50M  (clk_50M),
         .rst_n    (rst_n),
         .TBS_in   (TBS_in),
@@ -152,14 +152,21 @@ module Ultrasound_system (
     );
 
     // 10. UART Transmitter (Result Upload)
-    UART_TX inst12_UART_TX (
+    // UART_TX inst12_UART_TX (
+    //     .clk_50M        (clk_50M),
+    //     .rst_n          (rst_n),
+    //     .echo_tof       (echo_tof_w),
+    //     .echo_peak      (echo_peak_w),
+    //     .processing_done(processing_done_w),
+    //     .rs232_tx       (rs232_tx_line),
+    //     .tx_busy        ()
+    // );
+    UART_TX_8bit inst12_UART_TX (
         .clk_50M        (clk_50M),
         .rst_n          (rst_n),
         .echo_tof       (echo_tof_w),
-        .echo_peak      (echo_peak_w),
         .processing_done(processing_done_w),
-        .rs232_tx       (rs232_tx_line),
-        .tx_busy        ()
+        .rs232_tx       (rs232_tx_line)
     );
 
     // 11. TBS Transmitter Interface
