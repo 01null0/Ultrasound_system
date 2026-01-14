@@ -52,7 +52,7 @@ module Ultrasound_system (
     // ========================================================
 
     // 1. TBS Receiver Interface
-    UART_RX_8bit inst2_TBS_RX (
+    TBS_RX inst2_TBS_RX (
         .clk_50M  (clk_50M),
         .rst_n    (rst_n),
         .TBS_in   (TBS_in),
@@ -61,12 +61,12 @@ module Ultrasound_system (
 
     // 2. UART Receiver (Command Parser)
     UART_RX inst3_UART_RX (
-        .clk_50M     (clk_50M),
-        .rst_n       (rst_n),
-        .rs232_rx    (rs232_rx_line),
-        .rx_done     (),               // unused
-        .test_rx_data(),               // unused
-        .command     (command_bus)
+        .clk_50M      (clk_50M),
+        .rst_n        (rst_n),
+        .rs232_rx     (rs232_rx_line),     // 新接口信号
+        .rx_frame_data(rx_frame_data_w),   // 接收到的完整3字节数据
+        .frame_valid  (rx_frame_valid_w),  // 帧有效脉冲
+        .command      (command_bus)        // 提取出的命令 (取自第3字节低3位)
     );
 
     // 3. Main Control Logic (State Machine)
