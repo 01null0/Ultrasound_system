@@ -18,7 +18,7 @@ module TBS_RX #(
     //----------------------------------------------------------------
     // 计算每个比特周期对应的时钟周期数。
     // localparam BIT_PERIOD_COUNT = CLK_FREQ / BAUD_RATE;
-    localparam BIT_PERIOD_COUNT = 434;
+    localparam BIT_PERIOD_COUNT = 450;
     // 为计数器计算所需的位宽，使用 $clog2 以优化资源。45
     localparam CNT_WIDTH = $clog2(BIT_PERIOD_COUNT);
 
