@@ -8,8 +8,6 @@ module Ultrasound_system (
     input  wire        rst_n,
     input  wire        TBS_in,
     input  wire        ad_in,           // AD7352 MISO
-    // 【新增】引出阈值设置端口
-    input  wire [17:0] corr_threshold,
     output wire        TBS_out,
     output wire        ad_cs,
     output wire        ad_clk,
@@ -33,6 +31,8 @@ module Ultrasound_system (
     wire        clk_45M_w;  // PLL -> AD
     wire        pll_areset_w;  // Reset_PLL -> PLL
     wire        pll_locked_w;  // PLL -> (unused)
+
+    wire [17:0] rx_threshold_w; // 用于连接 UART_RX 输出的新阈值
 
     wire [11:0] ad_data_w;  // AD -> FIFO
     wire        ad_done_w;  // AD -> FIFO (wrreq)
@@ -64,7 +64,7 @@ module Ultrasound_system (
         .clk_50M      (clk_50M),
         .rst_n        (rst_n),
         .rs232_rx     (rs232_rx_line),     // 新接口信号
-        .rx_frame_data(rx_frame_data_w),   // 接收到的完整3字节数据
+        .corr_threshold(rx_threshold_w),   // 接收到的完整3字节数据
         .frame_valid  (rx_frame_valid_w),  // 帧有效脉冲
         .command      (command_bus)        // 提取出的命令 (取自第3字节低3位)
     );
@@ -142,7 +142,7 @@ module Ultrasound_system (
         .fifo_empty     (fifo_empty_w),
 
         // 【修改】这里不再连接 18'd0，而是连接顶层输入的 corr_threshold
-        .corr_threshold(corr_threshold),
+        .corr_threshold(rx_threshold_w),
 
         .fifo_rdreq     (fifo_rdreq_w),
         .hit_flag       (),                  // unused

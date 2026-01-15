@@ -3,15 +3,19 @@ module UART_RX (
     input             rst_n,         // 复位信号
     input             rs232_rx,      // 串行数据输入
     
-    // 新接口：输出5字节包中的有效数据
-    output reg [23:0] rx_frame_data, // [Data1, Data2, Data3]
-    output reg [ 2:0] command,       // 取 Data3 的低3位
+    // 调试用：输出完整的24位数据包 [Flag(4) + Data(20)]
+    output reg [23:0] rx_frame_data, 
+  
+    // 解析后的控制信号
+    output reg [ 2:0] command,       // 标志位为0时更新，脉冲信号(默认0)
+    output reg [17:0] corr_threshold,// 标志位为1时更新，保持信号(默认2000)
+    
     output reg        frame_valid    // 帧接收成功脉冲
 );
-
     //参数定义
     parameter CLK_FREQ = 50_000_000;
-    parameter BAUD_RATE = 115200;    // 请确保波特率与TB一致
+    parameter BAUD_RATE = 19200; // 默认19200，可由上层 parameter 覆盖
+    
     localparam BAUD_CNT_MAX = CLK_FREQ / BAUD_RATE - 1;
     localparam HALF_BAUD = BAUD_CNT_MAX / 2;
 
@@ -37,7 +41,9 @@ module UART_RX (
     localparam STOP = 2'b11;
     reg [1:0] state;
 
-    // 同步
+    // -----------------------------------------------------------
+    // 同步处理
+    // -----------------------------------------------------------
     always @(posedge clk_50M or negedge rst_n) begin
         if (!rst_n) sync_regs <= 2'b11;
         else sync_regs <= {sync_regs[0], rs232_rx};
@@ -45,7 +51,7 @@ module UART_RX (
     wire nedge_detect = (sync_regs[1] & ~sync_regs[0]);
 
     // -----------------------------------------------------------
-    // Part 1: UART 底层字节接收
+    // Part 1: UART 底层字节接收 (保持不变)
     // -----------------------------------------------------------
     always @(posedge clk_50M or negedge rst_n) begin
         if (!rst_n) begin
@@ -68,9 +74,9 @@ module UART_RX (
                 START: begin
                     if (baud_cnt == HALF_BAUD) begin
                         if (!sync_regs[0]) begin
-                            state <= DATA;
-                            baud_cnt <= 0;
-                            bit_cnt <= 0;
+                             state <= DATA;
+                             baud_cnt <= 0;
+                             bit_cnt <= 0;
                         end
                         else state <= IDLE;
                     end
@@ -79,7 +85,7 @@ module UART_RX (
                 DATA: begin
                     if (baud_cnt == BAUD_CNT_MAX) begin
                         baud_cnt <= 0;
-                        rx_data[bit_cnt] <= sync_regs[0]; // 采样
+                        rx_data[bit_cnt] <= sync_regs[0]; 
                         if (bit_cnt == 7) state <= STOP;
                         else bit_cnt <= bit_cnt + 1;
                     end
@@ -98,19 +104,31 @@ module UART_RX (
     end
 
     // -----------------------------------------------------------
-    // Part 2: 5字节帧解析逻辑
+    // Part 2: 5字节帧解析逻辑 (核心修改部分)
     // -----------------------------------------------------------
+    
+    // 辅助信号：提取24位Payload中的字段
+    // Payload结构: [Byte1(Data1)] [Byte2(Data2)] [Byte3(Data3)]
+    // Flag: Data1的高4位
+    // Data: Data1的低4位 + Data2 + Data3 (共20位)
+    wire [3:0]  pkg_flag = data_buf[0][7:4];
+    wire [19:0] pkg_data = {data_buf[0][3:0], data_buf[1], data_buf[2]};
+
     always @(posedge clk_50M or negedge rst_n) begin
         if (!rst_n) begin
             byte_cnt <= 0;
             rx_frame_data <= 0;
-            command <= 0;
+            
+            command <= 0;           // 命令默认 0
+            corr_threshold <= 18'd5000; // 【关键】阈值默认 2000
+            
             frame_valid <= 0;
             data_buf[0] <= 0; data_buf[1] <= 0; data_buf[2] <= 0;
         end
         else begin
             frame_valid <= 0;
-            command <= 0;
+            command <= 0; // 命令是脉冲信号，自动清零
+            // 注意：corr_threshold 不自动清零，保持上一次的值
 
             if (rx_done) begin
                 case (byte_cnt)
@@ -118,25 +136,39 @@ module UART_RX (
                         if (rx_data == FRAME_HEAD) byte_cnt <= 1;
                         else byte_cnt <= 0;
                     end
-                    1: begin // Data 1
+                    1: begin // Data 1 (高8位，含标志位)
                         data_buf[0] <= rx_data;
                         byte_cnt <= 2;
                     end
-                    2: begin // Data 2
+                    2: begin // Data 2 (中8位)
                         data_buf[1] <= rx_data;
                         byte_cnt <= 3;
                     end
-                    3: begin // Data 3 (包含命令)
+                    3: begin // Data 3 (低8位)
                         data_buf[2] <= rx_data;
                         byte_cnt <= 4;
                     end
                     4: begin // 校验帧尾
                         if (rx_data == FRAME_TAIL) begin
+                            // 1. 组合完整数据用于调试
                             rx_frame_data <= {data_buf[0], data_buf[1], data_buf[2]};
-                            command <= data_buf[2][2:0]; // 取最后字节低3位
+                            
+                            // 2. 根据标志位分发数据
+                            case (pkg_flag)
+                                4'b0000: begin // 标志位 0：控制命令
+                                    command <= pkg_data[2:0]; // 取低3位作为命令
+                                end
+                                4'b0001: begin // 标志位 1：设置阈值
+                                    corr_threshold <= pkg_data[17:0]; // 取低18位作为阈值
+                                end
+                                default: begin
+                                    // 未知标志位，可在此处理或忽略
+                                end
+                            endcase
+                            
                             frame_valid <= 1'b1;
                         end
-                        byte_cnt <= 0; // 无论成功失败，复位状态机
+                        byte_cnt <= 0; // 复位状态机
                     end
                     default: byte_cnt <= 0;
                 endcase

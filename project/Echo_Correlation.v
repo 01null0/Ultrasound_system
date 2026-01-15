@@ -204,7 +204,7 @@ module Echo_Correlation (
     
     // 设定一个合理的停止计数，例如 2000 (需大于实际回波窗口长度)
     // 通常只需要处理前几千个点（取决于最大测量距离）。
-    localparam PROCESS_END_COUNT = 16'd4400; // 采集点数阈值，需根据实际情况调整
+    localparam PROCESS_END_COUNT = 16'd5500; // 采集点数阈值，需根据实际情况调整
 
     always @(posedge clk_50M or negedge rst_n) begin
         if (!rst_n) begin

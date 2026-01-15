@@ -9,7 +9,7 @@ module tb_Ultrasound_system;
     reg         rst_n;
     reg         TBS_in;          // 输入：TBS 协议脉冲信号
     reg         ad_in;           // 输入：模拟 AD7352 的串行数据输出 (SDATA)
-    reg  [17:0] corr_threshold;  // 阈值设置
+    //reg  [17:0] corr_threshold;  // 阈值设置
 
     // 输出信号
     wire        TBS_out;
@@ -34,7 +34,6 @@ module tb_Ultrasound_system;
         .rst_n         (rst_n),
         .TBS_in        (TBS_in),
         .ad_in         (ad_in),
-        .corr_threshold(corr_threshold),
         .TBS_out       (TBS_out),
         .ad_cs         (ad_cs),
         .ad_clk        (ad_clk),
@@ -46,17 +45,18 @@ module tb_Ultrasound_system;
     );
 
     // 【关键修改】强行覆盖子模块的波特率参数，确保仿真模型与 TB 一致
-    // 必须覆盖 TBS_RX，否则它无法识别 TB 发送的脉冲宽度
-    defparam u_dut.inst2_TBS_RX.BAUD_RATE   = 19200; 
-    defparam u_dut.inst3_UART_RX.BAUD_RATE  = 19200;
-    defparam u_dut.inst12_UART_TX.BAUD_RATE = 19200;
-    defparam u_dut.inst2_TBS_TX.BAUD_RATE   = 19200;
+    // // 必须覆盖 TBS_RX，否则它无法识别 TB 发送的脉冲宽度
+    // defparam u_dut.inst2_TBS_RX.BAUD_RATE   = 19200; 
+    // defparam u_dut.inst3_UART_RX.BAUD_RATE  = 19200;
+    // defparam u_dut.inst12_UART_TX.BAUD_RATE = 19200;
+    // defparam u_dut.inst2_TBS_TX.BAUD_RATE   = 19200;
 
     // ============================================================
     // 5. 信号探针 (Debug Signals)
     // ============================================================
     // 观测 UART_RX 解析出的命令 (应为 1)
     wire [ 2:0] debug_command = u_dut.inst3_UART_RX.command;
+    wire [23:0] debug_rx_frame_data = u_dut.inst3_UART_RX.rx_frame_data;
     // 观测 UART_RX 是否成功接收到一帧 (5字节)
     wire        debug_frame_valid = u_dut.inst3_UART_RX.frame_valid;
     
@@ -66,7 +66,7 @@ module tb_Ultrasound_system;
 
     // 自相关数据
     wire [19:0] debug_echo_tof = u_dut.inst_Echo_Correlation.echo_tof;
-    
+    wire [17:0] debug_corr_threshold = u_dut.inst_Echo_Correlation.corr_threshold;
     // 串口发送完成标志
     wire debug_processing_done = u_dut.inst12_UART_TX.processing_done; 
     wire debug_rs232_tx = u_dut.inst12_UART_TX.rs232_tx; 
@@ -148,7 +148,7 @@ module tb_Ultrasound_system;
     initial begin
         // 请确保路径正确，如果是 Modelsim 仿真，通常放在工程目录下
         // 或者使用绝对路径，例如: "E:/pythonProject1/ad_data.hex"
-        $readmemh("ad_data.hex", ad_memory); 
+        $readmemh("E:/pythonProject1/ad_data.hex", ad_memory); 
         ad_in = 1'b0;
     end
 
@@ -189,7 +189,7 @@ module tb_Ultrasound_system;
         TBS_in = 1;
         ad_index = 0;
         // 设置阈值 (示例值 3500)
-        corr_threshold = 18'd3500;
+        //corr_threshold = 18'd3500;
 
         // --- 复位 & 等待 PLL 稳定 ---
         #200;

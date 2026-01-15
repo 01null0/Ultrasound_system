@@ -18,11 +18,11 @@ module Order_4s (
     // 时间参数
     parameter Time_4s = 32'd200_000_000;
     parameter Time_10ms = 19'd500_000;  // 10ms (单次测量周期)
-    parameter Time_6ms = 19'd300_000;  // 6ms (AD采样结束时刻)
-    parameter Time_3ms = 19'd150_000;  // 3ms (盲区/等待时刻)
+    parameter Time_6_5ms = 19'd325_000;  // 6.5ms (AD采样结束时刻)
+    parameter Time_1ms = 19'd50_000;  // 1ms (盲区/等待时刻)
 
     // AD采样率控制
-    parameter Time_1us = 16'd34;//1Mhz采样率
+    parameter Time_1us = 16'd50;  //1Mhz采样率
 
     // 状态机定义
     localparam [2:0] 
@@ -106,14 +106,14 @@ module Order_4s (
 
             // 等待盲区 (0 ~ 1ms)
             WAIT_1MS: begin
-                if (cnt_10ms >= Time_3ms) next_state = AD_SAMPLING;
+                if (cnt_10ms >= Time_1ms) next_state = AD_SAMPLING;
                 else next_state = WAIT_1MS;
             end
 
             // 采样窗口 (1ms ~ 9ms)
             AD_SAMPLING: begin
                 if (cnt_4s >= Time_4s) next_state = SYS_STOP;
-                else if (cnt_10ms >= Time_6ms)
+                else if (cnt_10ms >= Time_6_5ms)
                     next_state = WAIT_10MS;  // 采样结束，等待本周期剩余时间
                 else next_state = AD_SAMPLING;
             end
