@@ -125,9 +125,9 @@ module tb_Ultrasound_system;
             // 1. Frame Head '['
             send_tbs_byte(8'h5B); 
             // 2. Data 1 (Reserved/Zero)
-            send_tbs_byte(8'h00);
+            send_tbs_byte(8'h40);
             // 3. Data 2 (Reserved/Zero)
-            send_tbs_byte(8'h00);
+            send_tbs_byte(8'h40);
             // 4. Data 3 (Contains Command) - 这里放入命令 0x01
             send_tbs_byte(cmd_byte);
             // 5. Frame Tail ']'
@@ -203,8 +203,8 @@ module tb_Ultrasound_system;
         // ========================================================
         $display("Sending Start Command Frame (5 Bytes)...");
         
-        // 【关键修改】调用新任务发送 5 字节帧
-        send_tbs_frame(8'h01);
+        
+        send_tbs_frame(8'h43);
 
         // 等待帧解析完成 (检测 UART_RX 输出的 valid 信号和命令值)
         wait (debug_frame_valid == 1'b1);
