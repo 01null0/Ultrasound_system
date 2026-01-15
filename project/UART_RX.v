@@ -111,7 +111,7 @@ module UART_RX (
     // Payload结构: [Byte1(Data1)] [Byte2(Data2)] [Byte3(Data3)]
     // Flag: Data1的高4位
     // Data: Data1的低4位 + Data2 + Data3 (共20位)
-    wire [3:0]  pkg_flag = data_buf[0][7:4];
+    wire [3:0]  pkg_flag = data_buf[0][7:4];//
     wire [19:0] pkg_data = {data_buf[0][3:0], data_buf[1], data_buf[2]};
 
     always @(posedge clk_50M or negedge rst_n) begin
@@ -155,14 +155,14 @@ module UART_RX (
                             
                             // 2. 根据标志位分发数据
                             case (pkg_flag)
-                                4'b0000: begin // 标志位 0：控制命令
+                                4'b0100: begin // 标志位 0：控制命令
                                     command <= pkg_data[2:0]; // 取低3位作为命令
                                 end
-                                4'b0001: begin // 标志位 1：设置阈值
+                                4'b0101: begin // 标志位 1：设置阈值
                                     corr_threshold <= pkg_data[17:0]; // 取低18位作为阈值
                                 end
                                 default: begin
-                                    // 未知标志位，可在此处理或忽略
+                                    // 未知标志位
                                 end
                             endcase
                             
