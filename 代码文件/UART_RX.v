@@ -2,124 +2,145 @@ module UART_RX (
     input             clk_50M,       // 50MHz时钟
     input             rst_n,         // 复位信号
     input             rs232_rx,      // 串行数据输入
-    output reg        rx_done,       // 接收完成标志
-    output     [11:0] test_rx_data,  // 接收到的数据
-    output reg [ 2:0] command        // 命令输出
+    
+    // 新接口：输出5字节包中的有效数据
+    output reg [23:0] rx_frame_data, // [Data1, Data2, Data3]
+    output reg [ 2:0] command,       // 取 Data3 的低3位
+    output reg        frame_valid    // 帧接收成功脉冲
 );
+
     //参数定义
-    parameter CLK_FREQ = 50_000_000;  // 系统时钟频率
-    parameter BAUD_RATE = 115200;  // 波特率
-    //localparam BAUD_CNT_MAX = CLK_FREQ / BAUD_RATE - 1;  // 波特周期计数器最大值
-    //localparam HALF_BAUD = BAUD_CNT_MAX/2;  // 半波特周期计算（651）
-    localparam BAUD_CNT_MAX = 434;
-    localparam HALF_BAUD = 217;
+    parameter CLK_FREQ = 50_000_000;
+    parameter BAUD_RATE = 115200;    // 请确保波特率与TB一致
+    localparam BAUD_CNT_MAX = CLK_FREQ / BAUD_RATE - 1;
+    localparam HALF_BAUD = BAUD_CNT_MAX / 2;
 
-    //信号定义
-    reg [ 1:0] sync_regs;  // 同步寄存器（用于亚稳态消除）
-    reg [16:0] baud_cnt;  // 波特率计数器
-    reg [ 3:0] bit_cnt;  // 数据位计数器
-    reg        rx_en;  // 接收使能信号
-    reg [ 7:0] rx_data;
-    assign test_rx_data = {4'b1010, rx_data};  //测试输出
+    // 帧定义
+    localparam FRAME_HEAD = 8'h5B; // '['
+    localparam FRAME_TAIL = 8'h5D; // ']'
 
-    //状态定义
-    localparam IDLE = 2'b00;  // 空闲状态
-    localparam START = 2'b01;  // 起始位检测
-    localparam DATA = 2'b10;  // 数据位接收
-    localparam STOP = 2'b11;  // 停止位接收
+    // 信号定义
+    reg [1:0] sync_regs;
+    reg [15:0] baud_cnt;
+    reg [3:0] bit_cnt;
+    reg [7:0] rx_data;
+    reg       rx_done;
+
+    // 帧解析状态
+    reg [2:0] byte_cnt;       // 0~4
+    reg [7:0] data_buf [2:0]; // 缓存中间3个字节
+
+    // 状态机
+    localparam IDLE = 2'b00;
+    localparam START = 2'b01;
+    localparam DATA = 2'b10;
+    localparam STOP = 2'b11;
     reg [1:0] state;
 
-    //同步和下降沿检测
+    // 同步
     always @(posedge clk_50M or negedge rst_n) begin
         if (!rst_n) sync_regs <= 2'b11;
         else sync_regs <= {sync_regs[0], rs232_rx};
     end
-    wire nedge_detect = (sync_regs[1] & ~sync_regs[0]);  // 下降沿检测
+    wire nedge_detect = (sync_regs[1] & ~sync_regs[0]);
 
-    //主状态机
+    // -----------------------------------------------------------
+    // Part 1: UART 底层字节接收
+    // -----------------------------------------------------------
     always @(posedge clk_50M or negedge rst_n) begin
         if (!rst_n) begin
             state    <= IDLE;
             baud_cnt <= 0;
             bit_cnt  <= 0;
-            rx_data  <= 8'h00;
+            rx_data  <= 0;
             rx_done  <= 0;
-            rx_en    <= 0;
         end
         else begin
-            if (rx_done) begin
-                rx_done <= 1'b0;
-                rx_data <= 0;
-            end
+            if (rx_done) rx_done <= 1'b0; // 脉冲复位
+
             case (state)
                 IDLE: begin
-                    if (nedge_detect) begin  // 检测到起始位下降沿
+                    if (nedge_detect) begin
                         state <= START;
                         baud_cnt <= 0;
                     end
                 end
-
-                START: begin  // 起始位验证
-                    if (baud_cnt == HALF_BAUD) begin  // 修改为HALF_BAUD
-                        if (!sync_regs[0]) begin  // 确认起始位为低
+                START: begin
+                    if (baud_cnt == HALF_BAUD) begin
+                        if (!sync_regs[0]) begin
                             state <= DATA;
                             baud_cnt <= 0;
                             bit_cnt <= 0;
                         end
-                        else state <= IDLE;  // 错误，返回空闲
+                        else state <= IDLE;
                     end
                     else baud_cnt <= baud_cnt + 1;
                 end
-
-                DATA: begin  // 接收8位数据
+                DATA: begin
                     if (baud_cnt == BAUD_CNT_MAX) begin
                         baud_cnt <= 0;
-                        if (bit_cnt == 7) begin
-                            state <= STOP;
-                        end
+                        rx_data[bit_cnt] <= sync_regs[0]; // 采样
+                        if (bit_cnt == 7) state <= STOP;
                         else bit_cnt <= bit_cnt + 1;
-                    end
-                    else begin
-                        if (baud_cnt == HALF_BAUD) begin  // 修改为HALF_BAUD
-                            rx_data[bit_cnt] <= sync_regs[0];  // 在比特中间采样
-                        end
-                        baud_cnt <= baud_cnt + 1;
-                    end
-                end
-
-                STOP: begin  // 停止位处理
-                    if (baud_cnt == BAUD_CNT_MAX) begin
-                        if (sync_regs[0] == 1'b1) begin  // 验证停止位为高
-                            rx_done <= 1'b1;  // 数据接收完成
-                        end
-                        state <= IDLE;
                     end
                     else baud_cnt <= baud_cnt + 1;
                 end
+                STOP: begin
+                    if (baud_cnt == BAUD_CNT_MAX) begin
+                        state <= IDLE;
+                        rx_done <= 1'b1; // 字节完成
+                    end
+                    else baud_cnt <= baud_cnt + 1;
+                end
+                default: state <= IDLE;
             endcase
         end
     end
 
-    //命令解码
-    wire [7:0] cmd = rx_data;
+    // -----------------------------------------------------------
+    // Part 2: 5字节帧解析逻辑
+    // -----------------------------------------------------------
     always @(posedge clk_50M or negedge rst_n) begin
         if (!rst_n) begin
+            byte_cnt <= 0;
+            rx_frame_data <= 0;
             command <= 0;
+            frame_valid <= 0;
+            data_buf[0] <= 0; data_buf[1] <= 0; data_buf[2] <= 0;
         end
         else begin
-            case (cmd)
-                8'h00: command <= 0;
-                8'h01: command <= 1;
-                8'h02: command <= 2;
-                8'h03: command <= 3;
-                8'h04: command <= 4;
-                8'h05: command <= 5;
-                8'h06: command <= 6;
-                8'h07: command <= 7;
-                8'h08: command <= 8;
+            frame_valid <= 0;
+            command <= 0;
 
-                default: command <= 0;
-            endcase
+            if (rx_done) begin
+                case (byte_cnt)
+                    0: begin // 找帧头
+                        if (rx_data == FRAME_HEAD) byte_cnt <= 1;
+                        else byte_cnt <= 0;
+                    end
+                    1: begin // Data 1
+                        data_buf[0] <= rx_data;
+                        byte_cnt <= 2;
+                    end
+                    2: begin // Data 2
+                        data_buf[1] <= rx_data;
+                        byte_cnt <= 3;
+                    end
+                    3: begin // Data 3 (包含命令)
+                        data_buf[2] <= rx_data;
+                        byte_cnt <= 4;
+                    end
+                    4: begin // 校验帧尾
+                        if (rx_data == FRAME_TAIL) begin
+                            rx_frame_data <= {data_buf[0], data_buf[1], data_buf[2]};
+                            command <= data_buf[2][2:0]; // 取最后字节低3位
+                            frame_valid <= 1'b1;
+                        end
+                        byte_cnt <= 0; // 无论成功失败，复位状态机
+                    end
+                    default: byte_cnt <= 0;
+                endcase
+            end
         end
     end
 endmodule

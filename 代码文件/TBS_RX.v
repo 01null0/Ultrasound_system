@@ -1,7 +1,7 @@
 module TBS_RX #(
     // -- 参数化配置 --
     parameter CLK_FREQ    = 50_000_000, // 系统时钟频率 (单位: Hz)
-    parameter BAUD_RATE   = 115200      // 期望的波特率
+    parameter BAUD_RATE   = 19200      // 期望的波特率
 ) (
     input                       clk_50M,        // 系统时钟
     input                       rst_n,      // 异步复位，低电平有效
@@ -18,7 +18,7 @@ module TBS_RX #(
     //----------------------------------------------------------------
     // 计算每个比特周期对应的时钟周期数。
     // localparam BIT_PERIOD_COUNT = CLK_FREQ / BAUD_RATE;
-    localparam BIT_PERIOD_COUNT = 434;
+    localparam BIT_PERIOD_COUNT = 450;
     // 为计数器计算所需的位宽，使用 $clog2 以优化资源。45
     localparam CNT_WIDTH = $clog2(BIT_PERIOD_COUNT);
 

@@ -14,7 +14,7 @@ module UART_TX (
     // 参数定义
     // ==========================================
     parameter CLK_FREQ  = 50_000_000;
-    parameter BAUD_RATE = 115200;
+    parameter BAUD_RATE = 19200;
     localparam BAUD_CNT_MAX = CLK_FREQ / BAUD_RATE - 1; 
 
     localparam S_IDLE  = 3'd0;

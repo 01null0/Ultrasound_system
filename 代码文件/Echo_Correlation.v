@@ -95,12 +95,12 @@ module Echo_Correlation (
     
     // 【重要提示】：原本的 25000 是基于 50MHz 时钟的。
     // 现在 global_cnt 计数的是“样本数”。
-    // 假设您的 ADC 采样率是 3MHz (AD7352最大速率)，
-    // 那么 500us 的盲区对应的样本数为：500us * 3MHz = 1500 个点。
+    // 假设您的 ADC 采样率是 1.5MHz (AD7352最大速率)，
+    // 那么 500us 的盲区对应的样本数为：500us * 1.5MHz = 750 个点。
     // 请根据实际采样率修改下面的参数！
     
-    parameter BLIND_WINDOW_SAMPLES  = 20'd1500; // 示例：需根据实际采样率修改
-    parameter NEAR_ZONE_END_SAMPLES = BLIND_WINDOW_SAMPLES + 20'd120; // 示例
+    parameter BLIND_WINDOW_SAMPLES  = 20'd500; // 示例：需根据实际采样率修改
+    parameter NEAR_ZONE_END_SAMPLES = BLIND_WINDOW_SAMPLES + 20'd50; // 示例
 
     reg [19:0] global_cnt; 
     
@@ -200,14 +200,11 @@ module Echo_Correlation (
             end
         end
     end
-    // ============================================================
-    // 8. 处理完成信号生成 (修正版)
-    // ============================================================
+    //信号处理
     
     // 设定一个合理的停止计数，例如 2000 (需大于实际回波窗口长度)
-    // 假设 AD 采样率为 3MHz，10ms 周期内最多有 30000 个点，
-    // 但通常我们只需要处理前几千个点（取决于最大测量距离）。
-    localparam PROCESS_END_COUNT = 16'd8000; // 采集点数阈值，需根据实际情况调整
+    // 通常只需要处理前几千个点（取决于最大测量距离）。
+    localparam PROCESS_END_COUNT = 16'd4400; // 采集点数阈值，需根据实际情况调整
 
     always @(posedge clk_50M or negedge rst_n) begin
         if (!rst_n) begin

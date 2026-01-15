@@ -22,7 +22,7 @@ module Order_4s (
     parameter Time_3ms = 19'd150_000;  // 3ms (盲区/等待时刻)
 
     // AD采样率控制
-    parameter Time_1us = 16'd34;//1Mhz采样率
+    parameter Time_1us = 16'd50;  //1Mhz采样率
 
     // 状态机定义
     localparam [2:0] 

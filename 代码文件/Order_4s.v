@@ -21,8 +21,8 @@ module Order_4s (
     parameter Time_6ms = 19'd300_000;  // 6ms (AD采样结束时刻)
     parameter Time_3ms = 19'd150_000;  // 3ms (盲区/等待时刻)
 
-    // AD采样率控制: 1us = 50个时钟周期 (即 1MSPS 采样率)
-    parameter Time_1us = 16'd34;
+    // AD采样率控制
+    parameter Time_1us = 16'd34;//1Mhz采样率
 
     // 状态机定义
     localparam [2:0] 

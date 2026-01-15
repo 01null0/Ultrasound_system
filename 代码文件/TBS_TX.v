@@ -1,7 +1,7 @@
 module TBS_TX #(
     // -- 参数化配置 --
     parameter CLK_FREQ    = 50_000_000, // 系统时钟频率 (单位: Hz)
-    parameter BAUD_RATE   = 115200      // 期望的波特率
+    parameter BAUD_RATE   = 19200      // 期望的波特率
 ) (
     input                       clk_50M,        // 系统时钟
     input                       rst_n,      // 异步复位，低电平有效
@@ -14,9 +14,9 @@ module TBS_TX #(
 );
 
     // UART_TX/RX 中 BAUD_CNT_MAX = 434，表示 435 个时钟周期。
-    localparam BIT_PERIOD_COUNT  = 434; // 修复：硬编码为 434，或使用 (CLK_FREQ / BAUD_RATE) + 1 但需确保整除逻辑
+    localparam BIT_PERIOD_COUNT  = (CLK_FREQ / BAUD_RATE) + 1; 
 
-    localparam PULSE_WIDTH_COUNT = BIT_PERIOD_COUNT / 10; // 脉冲宽度定义为比特周期的 10%
+    localparam PULSE_WIDTH_COUNT = BIT_PERIOD_COUNT / 8; // 脉冲宽度定义为比特周期的 10%
     // 精确位宽计算，$clog2(N) - 1 是指 N 个值 (0到N-1) 所需的最高位索引
     localparam PULSE_CNT_WIDTH   = $clog2(PULSE_WIDTH_COUNT) - 1;
     localparam BAUD_CNT_WIDTH    = $clog2(BIT_PERIOD_COUNT) - 1;

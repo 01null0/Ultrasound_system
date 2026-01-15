@@ -11,7 +11,7 @@ module UART_RX (
 
     //参数定义
     parameter CLK_FREQ = 50_000_000;
-    parameter BAUD_RATE = 115200;    // 请确保波特率与TB一致
+    parameter BAUD_RATE = 19200;    // 请确保波特率与TB一致
     localparam BAUD_CNT_MAX = CLK_FREQ / BAUD_RATE - 1;
     localparam HALF_BAUD = BAUD_CNT_MAX / 2;
 
