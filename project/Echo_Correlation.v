@@ -62,7 +62,7 @@ module Echo_Correlation (
         if (!rst_n) begin
             for (i = 0; i < 33; i = i + 1) tap[i] <= 0;
         end
-        // 使用 fifo_data_valid 替代 ad_valid
+        
         else if (fifo_data_valid) begin
             tap[0] <= data_signed;
             for (i = 1; i < 33; i = i + 1) tap[i] <= tap[i-1];
@@ -99,7 +99,7 @@ module Echo_Correlation (
     // 那么 500us 的盲区对应的样本数为：500us * 1.5MHz = 750 个点。
     // 请根据实际采样率修改下面的参数！
     
-    parameter BLIND_WINDOW_SAMPLES  = 20'd500; // 示例：需根据实际采样率修改
+    parameter BLIND_WINDOW_SAMPLES  = 20'd200; // 示例：需根据实际采样率修改
     parameter NEAR_ZONE_END_SAMPLES = BLIND_WINDOW_SAMPLES + 20'd50; // 示例
 
     reg [19:0] global_cnt; 
@@ -137,8 +137,8 @@ module Echo_Correlation (
             // 盲区结束瞬间
             if (global_cnt == BLIND_WINDOW_SAMPLES) begin
                 base_threshold <= max_noise_blind + (max_noise_blind >> 1);
-                if ((max_noise_blind + (max_noise_blind >> 1)) < 18'd600)
-                    base_threshold <= 18'd600;
+                if ((max_noise_blind + (max_noise_blind >> 1)) < 18'd4000)
+                    base_threshold <= 18'd4000;
             end
         end
     end
