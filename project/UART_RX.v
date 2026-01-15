@@ -110,6 +110,7 @@ module UART_RX (
         end
         else begin
             frame_valid <= 0;
+            command <= 0;
 
             if (rx_done) begin
                 case (byte_cnt)
