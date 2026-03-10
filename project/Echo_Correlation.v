@@ -99,7 +99,7 @@ module Echo_Correlation (
     // 那么 500us 的盲区对应的样本数为：500us * 1.5MHz = 750 个点。
     // 请根据实际采样率修改下面的参数！
     //
-    parameter BLIND_WINDOW_SAMPLES  = 20'd800; // 前面盲区多大，就加多少
+    parameter BLIND_WINDOW_SAMPLES  = 20'd100; // 前面盲区多大，就加多少
     parameter NEAR_ZONE_END_SAMPLES = BLIND_WINDOW_SAMPLES + 20'd50; // 示例
 
     reg [19:0] global_cnt; 

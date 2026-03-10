@@ -120,7 +120,7 @@ module UART_RX (
             rx_frame_data <= 0;
             
             command <= 0;           // 命令默认 0
-            corr_threshold <= 18'd5000; // 【关键】阈值默认 2000
+            corr_threshold <= 18'd500; // 【关键】阈值默认 2000
             
             frame_valid <= 0;
             data_buf[0] <= 0; data_buf[1] <= 0; data_buf[2] <= 0;

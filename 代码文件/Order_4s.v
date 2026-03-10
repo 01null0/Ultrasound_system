@@ -7,7 +7,9 @@ module Order_4s (
     output reg       start_test,       // 输出：测试模式指示
     output reg       Exc_start,        // 输出：激励启动信号 (发射超声波)
     output reg       relay,            // 输出：继电器切换信号
-    output reg       AD_start          // 输出：AD启动信号
+    output reg       AD_start,          // 输出：AD启动信号
+    output reg       batch_start,      // 大帧开始信号
+    output reg       batch_end         // 大帧结束信号
 );
 
     // ============================================================
@@ -16,10 +18,10 @@ module Order_4s (
     parameter CLK_FREQ = 50_000_000;
 
     // 时间参数
-    parameter Time_4s = 32'd200_000_000;
+    parameter Time_4s = 32'd180_500_000;
     parameter Time_10ms = 19'd500_000;  // 10ms (单次测量周期)
     parameter Time_6_5ms = 19'd325_000;  // 6.5ms (AD采样结束时刻)
-    parameter Time_1ms = 19'd50_000;  // 1ms (盲区/等待时刻)
+    parameter Time_800us = 19'd10_000;  // 200Us (盲区/等待时刻)
 
     // AD采样率控制
     parameter Time_1us = 16'd50;  //1Mhz采样率
@@ -59,14 +61,14 @@ module Order_4s (
             command_prev <= command;  // 记录上一拍命令，用于边沿检测
 
             // 命令 0x01: 系统启动
-            if (command == 3'h1 && command_prev != 3'h1) start <= 1;
-            // (注意: start 信号在原逻辑中是脉冲还是电平取决于需求，这里保持置1，由状态机控制结束)
+            if (command == 3'h3 && command_prev != 3'h3) start <= 1;
+            else start <= 0;
 
-            // 命令 0x02: 测试模式
-            if (command == 3'h2 && command_prev != 3'h2) start_test <= 1;
+            // 命令 0x02: 垂直度测量模式
+            if (command == 3'h2 && command_prev != 3'h2) relay <= 0;
 
-            // 命令 0x03: 继电器切换 (保留原文件逻辑，替代 sig_ctl)
-            if (command == 3'h3 && command_prev != 3'h3) relay <= ~relay;
+            // 命令 0x03: 井径测量模式
+            if (command == 3'h1 && command_prev != 3'h1) relay <= 1;
         end
     end
 
@@ -88,7 +90,9 @@ module Order_4s (
             end
 
             SYS_START: begin
-                next_state = PULSE_GEN;  // 启动后先进入等待，确保时序对齐
+                // 修改：启动后先跳转到 10ms 等待状态，跳过第1次采集(T=0)，
+                // 给大帧头发送留出 10ms 的时间。
+                next_state = WAIT_10MS; 
             end
 
             // 循环周期的起始/结束等待状态
@@ -106,7 +110,7 @@ module Order_4s (
 
             // 等待盲区 (0 ~ 1ms)
             WAIT_1MS: begin
-                if (cnt_10ms >= Time_1ms) next_state = AD_SAMPLING;
+                if (cnt_10ms >= Time_800us) next_state = AD_SAMPLING;
                 else next_state = WAIT_1MS;
             end
 
@@ -194,6 +198,24 @@ module Order_4s (
         if (!rst_n) sys_start_pulse <= 0;
         else if (current_state == PULSE_GEN && state_dly != PULSE_GEN) sys_start_pulse <= 1;
         else sys_start_pulse <= 0;
+    end
+
+    // ============================================================
+    // 大帧同步信号生成
+    // ============================================================
+    
+    // 生成 batch_start: 当状态从 IDLE 变为 SYS_START 时
+    always @(posedge clk_50M or negedge rst_n) begin
+        if (!rst_n) batch_start <= 0;
+        else if (current_state == IDLE && next_state == SYS_START) batch_start <= 1;
+        else batch_start <= 0;
+    end
+
+    // 生成 batch_end: 当状态即将变为 SYS_STOP 时
+    always @(posedge clk_50M or negedge rst_n) begin
+        if (!rst_n) batch_end <= 0;
+        else if (current_state != SYS_STOP && next_state == SYS_STOP) batch_end <= 1;
+        else batch_end <= 0;
     end
 
 endmodule

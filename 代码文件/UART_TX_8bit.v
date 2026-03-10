@@ -5,327 +5,221 @@ module UART_TX_8bit #(
     input wire clk_50M,
     input wire rst_n,
 
-    input wire [19:0] echo_tof,
-    input wire        processing_done,
+    // 控制接口
+    input wire batch_start,  // 开始4s采集 (发送大帧头)
+    input wire batch_end,    // 结束4s采集 (发送大帧尾)
+
+    // 数据接口
+    input wire [19:0] echo_tof,        // 回波数据
+    input wire        processing_done, // 数据有效脉冲
 
     output reg rs232_tx
 );
-
-
     localparam BAUD_CNT_MAX = CLK_FREQ / BAUD_RATE;
-    localparam CNT_WIDTH = $clog2(BAUD_CNT_MAX);
 
-    reg [CNT_WIDTH-1:0] baud_cnt;
+    // 状态定义
+    localparam S_IDLE = 3'd0;
+    localparam S_SEND_HEAD = 3'd1;  // 发送 7B 00 00 AA 7D
+    localparam S_WAIT_DATA = 3'd2;  // 等待数据或结束信号
+    localparam S_SEND_DATA = 3'd3;  // 发送 3字节 TOF
+    localparam S_SEND_TAIL = 3'd4;  // 发送 7B 00 00 FF 7D
 
-    reg [          7:0] frame_buf [0:4];
+    reg [ 2:0] state;
+    reg [ 2:0] byte_idx;  // 当前发送的字节索引
+    reg [12:0] baud_cnt;
+    reg [ 3:0] bit_idx;
+    // reg [7:0] tx_data; // 未使用，注释掉
+    reg [ 7:0] tx_shift;  // 当前发送字节的移位寄存器
 
-    reg [          1:0] sync_regs;
+    // 数据缓存
+    reg [23:0] data_latch;  // 缓存20位数据 (填充为24位)
+    reg        end_pending;  // 如果在发数据时来了结束信号，先记下来
 
-    //边沿检测
+    // 边沿检测 processing_done
+    reg [ 1:0] pd_sync;
     always @(posedge clk_50M or negedge rst_n) begin
-        if (!rst_n) sync_regs <= 2'b00;
-        else sync_regs <= {sync_regs[0], processing_done};
+        if (!rst_n) pd_sync <= 2'b00;
+        else pd_sync <= {pd_sync[0], processing_done};
     end
-    wire pi_flag = (sync_regs[0] & ~sync_regs[1]);  // 上升沿监测
+    wire pd_rise = (pd_sync[0] & ~pd_sync[1]);
+
+    // ============================================================
+    // 【修改点1】集中控制 baud_cnt
+    // 只在这里对 baud_cnt 进行赋值，不要在下面的状态机里赋值
+    // ============================================================
+    wire baud_tick = (baud_cnt == BAUD_CNT_MAX - 1);
 
     always @(posedge clk_50M or negedge rst_n) begin
         if (!rst_n) begin
-            frame_buf[0] <= 8'h00;
-            frame_buf[1] <= 8'h00;
-            frame_buf[2] <= 8'h00;
-            frame_buf[3] <= 8'h00;
-            frame_buf[4] <= 8'h00;
+            baud_cnt <= 0;
         end
-        else if (pi_flag) begin
-            frame_buf[0] <= 8'h5B;
-            frame_buf[1] <= {4'b0000, echo_tof[19:16]};
-            frame_buf[2] <= echo_tof[15:8];
-            frame_buf[3] <= echo_tof[7:0];
-            frame_buf[4] <= 8'h5D;
+        // 当处于空闲或等待状态时，强制复位计数器，
+        // 这样一旦跳入发送状态，计数器就从0开始，Start位时序就是对的。
+        else if (state == S_IDLE || state == S_WAIT_DATA) begin
+            baud_cnt <= 0;
         end
-    end
-
-    reg       sending;
-    reg       load_first;
-    reg [2:0] byte_idx;
-    reg [3:0] bit_idx;
-    reg [7:0] tx_shift;
-
-    // 波特计数器
-    always @(posedge clk_50M or negedge rst_n) begin
-        if (!rst_n) baud_cnt <= 0;
-        else if (!sending) baud_cnt <= 0;
-        else if (baud_cnt == BAUD_CNT_MAX - 1) baud_cnt <= 0;
-        else baud_cnt <= baud_cnt + 1'b1;
-    end
-
-    // 主发送状态机
-    always @(posedge clk_50M or negedge rst_n) begin
-        if (!rst_n) begin
-            sending    <= 1'b0;
-            load_first <= 1'b0;
-            byte_idx   <= 3'd0;
-            bit_idx    <= 4'd0;
-            tx_shift   <= 8'd0;
-            rs232_tx   <= 1'b1;
+        // 正常计数逻辑
+        else if (baud_tick) begin
+            baud_cnt <= 0;
         end
         else begin
-            if (pi_flag && !sending) begin
-                sending    <= 1'b1;
-                load_first <= 1'b1;
-                byte_idx   <= 3'd0;
-                bit_idx    <= 4'd0;
-                tx_shift   <= 8'h5B;
-            end
-
-            if (load_first) begin
-                load_first <= 1'b0;
-            end
-            else if (sending && baud_cnt == BAUD_CNT_MAX - 1) begin
-                bit_idx <= bit_idx + 1'b1;
-
-                case (bit_idx)
-                    4'd0: rs232_tx <= 1'b0;
-                    4'd1: rs232_tx <= tx_shift[0];
-                    4'd2: rs232_tx <= tx_shift[1];
-                    4'd3: rs232_tx <= tx_shift[2];
-                    4'd4: rs232_tx <= tx_shift[3];
-                    4'd5: rs232_tx <= tx_shift[4];
-                    4'd6: rs232_tx <= tx_shift[5];
-                    4'd7: rs232_tx <= tx_shift[6];
-                    4'd8: rs232_tx <= tx_shift[7];
-                    4'd9: rs232_tx <= 1'b1;
-                endcase
-
-                // 一个字节完成
-                if (bit_idx == 4'd9) begin
-                    bit_idx <= 4'd0;
-
-                    if (byte_idx == 3'd4) begin
-                        sending  <= 1'b0;
-                        rs232_tx <= 1'b1;
-                    end
-                    else begin
-                        byte_idx <= byte_idx + 1'b1;
-                        tx_shift <= frame_buf[byte_idx+1'b1];
-                    end
-                end
-            end
-
-            if (!sending) rs232_tx <= 1'b1;
+            baud_cnt <= baud_cnt + 1'b1;
         end
     end
 
-endmodule
-
-
-
-
-
-//可用
-/* module UART_TX_8bit 
-#(
-    parameter BAUD_RATE = 19200,      // 串口波特率
-    parameter CLK_FREQ  = 50_000_000  // 系统时钟频率
-)
-(
-    input  wire       clk_50M,     // 系统时钟
-    input  wire       rst_n,       // 低电平复位
-    input  wire [7:0] pi_data,     // 待发送字节
-    input  wire       pi_flag,     // 数据有效脉冲
-
-    output wire       rs_tx,       // 测试输出
-    output reg        rs232_tx,          // 串口 TX
-    output reg        tx_done      // 字节发送完成脉冲
-);
-
-    // 计算每个 bit 的周期
-    localparam BAUD_CNT_MAX = CLK_FREQ / BAUD_RATE;
-    localparam CNT_WIDTH = $clog2(BAUD_CNT_MAX);
-
-    // 内部寄存器
-    reg [CNT_WIDTH-1:0] baud_cnt;
-    reg work_en;
-    reg [3:0] bit_cnt;         // bit 计数 0-9
-    reg [7:0] tx_data_latch;   // 锁存发送字节
-
-	assign rs_tx = rs232_tx;
-
-    // 发送使能
+    // ============================================================
+    // 主状态机
+    // ============================================================
     always @(posedge clk_50M or negedge rst_n) begin
-        if (!rst_n)
-            work_en <= 1'b0;
-        else if (pi_flag && !work_en)
-            work_en <= 1'b1;   // 新数据到来开始发送
-        else if (bit_cnt == 4'd9 && baud_cnt == BAUD_CNT_MAX-1)
-            work_en <= 1'b0;   // 停止位发送完关闭
+        if (!rst_n) begin
+            state <= S_IDLE;
+            rs232_tx <= 1'b1;
+            bit_idx <= 0;
+            byte_idx <= 0;
+            end_pending <= 0;
+            tx_shift <= 0;
+        end
+        else begin
+            // 记录结束请求
+            if (batch_end) end_pending <= 1'b1;
+            else if (state == S_IDLE) end_pending <= 1'b0;
+
+            case (state)
+                S_IDLE: begin
+                    rs232_tx <= 1'b1;
+                    if (batch_start) begin
+                        state <= S_SEND_HEAD;
+                        byte_idx <= 0;
+                        bit_idx <= 0;
+                        // baud_cnt <= 0; // 【修改点2】移除此处的赋值，由上面 always 块统一控制
+                        // 加载帧头第一个字节
+                        tx_shift <= 8'h7B;
+                    end
+                end
+
+                S_SEND_HEAD: begin  // 发送 7B 00 00 AA 7D
+                    if (baud_tick) begin
+                        if (bit_idx == 9) begin
+                            bit_idx <= 0;
+                            if (byte_idx == 4) begin
+                                state <= S_WAIT_DATA;  // 头发送完毕
+                            end
+                            else begin
+                                byte_idx <= byte_idx + 1'b1;
+                                // 准备下一个字节
+                                case (byte_idx + 1)
+                                    1: tx_shift <= 8'h00;
+                                    2: tx_shift <= 8'h00;
+                                    3: tx_shift <= 8'hAA;
+                                    4: tx_shift <= 8'h7D;
+                                endcase
+                            end
+                        end
+                        else begin
+                            bit_idx <= bit_idx + 1'b1;
+                        end
+                    end
+                    update_tx_pin();
+                end
+
+                S_WAIT_DATA: begin
+                    rs232_tx <= 1'b1;
+                    bit_idx  <= 0;
+                    byte_idx <= 0;
+                    // baud_cnt <= 0; // 【修改点2】移除此处的赋值
+
+                    if (pd_rise) begin
+                        // 锁存数据，准备发送 (24位: 4位0 + 20位TOF)
+                        data_latch <= {4'b0000, echo_tof};
+
+                        // 【修改】先加载单包帧头 0x7B
+                        tx_shift <= 8'h7B;
+
+                        state <= S_SEND_DATA;
+                    end
+                    else if (end_pending || batch_end) begin
+                        // 如果没有数据了且收到结束信号，发尾部
+                        state <= S_SEND_TAIL;
+                        byte_idx <= 0;
+                        tx_shift <= 8'h7B;
+                    end
+                end
+
+                // ---------------- 修改后 ----------------
+                S_SEND_DATA: begin // 发送 5字节：7B + Data[23:16] + Data[15:8] + Data[7:0] + 7D
+                    if (baud_tick) begin
+                        if (bit_idx == 9) begin
+                            bit_idx <= 0;
+
+                            // 【修改】改为发送 5 个字节 (索引 0~4)
+                            if (byte_idx == 4) begin
+                                state <= S_WAIT_DATA;
+                            end
+                            else begin
+                                byte_idx <= byte_idx + 1'b1;
+                                // 【修改】状态机序列填充
+                                case (byte_idx + 1)
+                                    1: tx_shift <= data_latch[23:16];  // Data Byte 1 (高位)
+                                    2: tx_shift <= data_latch[15:8];  // Data Byte 2 (中位)
+                                    3: tx_shift <= data_latch[7:0];  // Data Byte 3 (低位)
+                                    4: tx_shift <= 8'h7D;  // Tail Byte (帧尾)
+                                endcase
+                            end
+                        end
+                        else begin
+                            bit_idx <= bit_idx + 1'b1;
+                        end
+                    end
+                    update_tx_pin();
+                end
+
+                S_SEND_TAIL: begin  // 发送 7B 00 00 FF 7D
+                    if (baud_tick) begin
+                        if (bit_idx == 9) begin
+                            bit_idx <= 0;
+                            if (byte_idx == 4) begin
+                                state <= S_IDLE;  // 全部结束
+                                end_pending <= 0;
+                            end
+                            else begin
+                                byte_idx <= byte_idx + 1'b1;
+                                case (byte_idx + 1)
+                                    1: tx_shift <= 8'h00;
+                                    2: tx_shift <= 8'h00;
+                                    3: tx_shift <= 8'hFF;
+                                    4: tx_shift <= 8'h7D;
+                                endcase
+                            end
+                        end
+                        else begin
+                            bit_idx <= bit_idx + 1'b1;
+                        end
+                    end
+                    update_tx_pin();
+                end
+
+                default: state <= S_IDLE;
+            endcase
+        end
     end
 
-    // 锁存发送字节
-    always @(posedge clk_50M or negedge rst_n) begin
-        if (!rst_n)
-            tx_data_latch <= 8'd0;
-        else if (pi_flag && !work_en)
-            tx_data_latch <= pi_data;
-    end
-
-    // 波特率计数
-    always @(posedge clk_50M or negedge rst_n) begin
-        if (!rst_n)
-            baud_cnt <= 0;
-        else if (!work_en)
-            baud_cnt <= 0;
-        else if (baud_cnt == BAUD_CNT_MAX-1)
-            baud_cnt <= 0;
-        else
-            baud_cnt <= baud_cnt + 1'b1;
-    end
-
-    // bit 计数器
-    always @(posedge clk_50M or negedge rst_n) begin
-        if (!rst_n)
-            bit_cnt <= 4'd0;
-        else if (!work_en)
-            bit_cnt <= 4'd0;
-        else if (baud_cnt == BAUD_CNT_MAX-1)
-            bit_cnt <= bit_cnt + 1'b1;
-    end
-
-    // rs232_tx 输出逻辑
-    always @(posedge clk_50M or negedge rst_n) begin
-        if (!rst_n)
-            rs232_tx <= 1'b1; // 空闲高电平
-        else if (work_en) begin
-            case (bit_cnt)
-                0: rs232_tx <= 1'b0;               // 起始位
-                1: rs232_tx <= tx_data_latch[0];
-                2: rs232_tx <= tx_data_latch[1];
-                3: rs232_tx <= tx_data_latch[2];
-                4: rs232_tx <= tx_data_latch[3];
-                5: rs232_tx <= tx_data_latch[4];
-                6: rs232_tx <= tx_data_latch[5];
-                7: rs232_tx <= tx_data_latch[6];
-                8: rs232_tx <= tx_data_latch[7];
-                9: rs232_tx <= 1'b1;               // 停止位
+    // 辅助任务：更新TX引脚状态
+    task update_tx_pin;
+        begin
+            case (bit_idx)
+                0: rs232_tx <= 1'b0;  // Start bit
+                1: rs232_tx <= tx_shift[0];
+                2: rs232_tx <= tx_shift[1];
+                3: rs232_tx <= tx_shift[2];
+                4: rs232_tx <= tx_shift[3];
+                5: rs232_tx <= tx_shift[4];
+                6: rs232_tx <= tx_shift[5];
+                7: rs232_tx <= tx_shift[6];
+                8: rs232_tx <= tx_shift[7];
+                9: rs232_tx <= 1'b1;  // Stop bit
                 default: rs232_tx <= 1'b1;
             endcase
-        end else
-			rs232_tx <= 1'b1;
-    end
+        end
+    endtask
 
-    // tx_done 单拍脉冲
-    always @(posedge clk_50M or negedge rst_n) begin
-        if (!rst_n)
-            tx_done <= 1'b0;
-        else if (work_en && bit_cnt == 4'd9 && baud_cnt == BAUD_CNT_MAX-1)
-            tx_done <= 1'b1;
-        else
-            tx_done <= 1'b0;
-    end
-
-endmodule  */
-
-
-
-/* module UART_TX_8bit 
-#(
-    parameter   BAUD_RATE = 19200,    // 串口波特率（单位：bps）
-    parameter   CLK_FREQ = 50_000_000 // 系统时钟频率（单位：Hz）
-)
-(
-    input   wire        clk_50M,     // 系统时钟
-    input   wire        rst_n,   // 低电平复位信号
-    input   wire [7:0]  pi_data, // 并行输入数据（8位）
-    input   wire        pi_flag, // 数据输入有效标志
-    
-    output  reg         rs232_tx     ,  // 串行数据输出
-	output  reg         tx_done
-);
-
-// 计算每个bit需要的时钟周期数
-	localparam   BAUD_CNT_MAX = CLK_FREQ / BAUD_RATE;
-    localparam CNT_WIDTH = $clog2(BAUD_CNT_MAX);
-
-// 内部寄存器定义
-reg         work_en;    // 发送使能信号
-reg [CNT_WIDTH:0]  baud_cnt;   // 波特率计数器
-reg         bit_flag;   // 比特发送标志
-reg [3:0]   bit_cnt;    // 已发送bit计数器（0-9）
-
-// 发送使能控制逻辑
-always@(posedge clk_50M or negedge rst_n)begin
-    if(!rst_n)
-        work_en <= 1'b0;  // 复位时关闭发送
-    else begin
-        if(pi_flag == 1'b1)
-            work_en <= 1'b1; // 当有数据要发送时使能
-        else if((bit_cnt == 4'd9)&&(bit_flag == 1'b1))
-            work_en <= 1'b0; // 发送完停止位后关闭
-    end
-end
-
-// 波特率时钟计数器
-always@(posedge clk_50M or negedge rst_n)begin
-    if(!rst_n)
-        baud_cnt <= 0; // 复位清零
-    else if((baud_cnt == BAUD_CNT_MAX - 1)||(work_en == 1'b0))
-        baud_cnt <= 0;  // 计数满或发送关闭时清零
-    else if(work_en == 1'b1)
-        baud_cnt <= baud_cnt + 1'b1; // 发送使能时计数
-end
-
-// 比特发送标志生成（每个bit周期开始时产生脉冲）
-always@(posedge clk_50M or negedge rst_n)begin
-    if(!rst_n)
-        bit_flag <= 1'b0;
-    else if (baud_cnt == 1)
-        bit_flag <= 1'b1; // 每个bit开始时刻产生标志
-    else 
-        bit_flag <= 1'b0;
-end
-
-// 发送bit计数器（计数范围0-9）
-always@(posedge clk_50M or negedge rst_n)begin
-    if(!rst_n)
-        bit_cnt <= 4'd0;  // 复位清零
-    else if((bit_cnt == 4'd9)&&(bit_flag == 1'b1))
-        bit_cnt <= 4'd0; // 发送完停止位后清零
-    else if(bit_flag == 1'b1)
-        bit_cnt <= bit_cnt + 1'b1; // 每个bit周期递增
-    else
-        bit_cnt <= bit_cnt;
-end
-
-// 单字节发送完成标志（1 clk 脉冲）
-always @(posedge clk_50M or negedge rst_n) begin
-    if (!rst_n)
-        tx_done <= 1'b0;
-    else if ((bit_cnt == 4'd9) && (bit_flag == 1'b1))
-        tx_done <= 1'b1;   // 停止位结束，字节发送完成
-    else
-        tx_done <= 1'b0;
-end
-
-
-// 串行数据输出逻辑
-always@(posedge clk_50M or negedge rst_n)begin
-    if(!rst_n)
-        rs232_tx <= 1'b1; // 复位时保持空闲状态（高电平）
-    else begin // 每个bit周期开始时更新输出
-        case(bit_cnt)
-            0: rs232_tx <= 1'b0;         // 起始位（低电平）
-            1: rs232_tx <= pi_data[0];   // 数据位0（LSB）
-            2: rs232_tx <= pi_data[1];   // 数据位1
-            3: rs232_tx <= pi_data[2];   // 数据位2
-            4: rs232_tx <= pi_data[3];   // 数据位3
-            5: rs232_tx <= pi_data[4];   // 数据位4
-            6: rs232_tx <= pi_data[5];   // 数据位5
-            7: rs232_tx <= pi_data[6];   // 数据位6
-            8: rs232_tx <= pi_data[7];   // 数据位7（MSB）
-            9: rs232_tx <= 1'b1;         // 停止位（高电平）
-            default: rs232_tx <= 1'b1;   // 默认空闲状态
-        endcase
-	end
-end
-
-endmodule */
+endmodule

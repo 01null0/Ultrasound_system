@@ -4,18 +4,18 @@
 //              Top-level module connecting all sub-modules.
 // ============================================================
 module Ultrasound_system (
-    input  wire        clk_50M,
-    input  wire        rst_n,
-    input  wire        TBS_in,
-    input  wire        ad_in,           // AD7352 MISO
-    output wire        TBS_out,
-    output wire        ad_cs,
-    output wire        ad_clk,
-    output wire        relay,
-    output wire        VIN_1,
-    output wire        VIN_2,
-    output wire        VIN_3,
-    output wire        VIN_4
+    input  wire clk_50M,
+    input  wire rst_n,
+    input  wire TBS_in,
+    input  wire ad_in,    // AD7352 MISO
+    output wire TBS_out,
+    output wire ad_cs,
+    output wire ad_clk,
+    output wire relay,
+    output wire VIN_1,
+    output wire VIN_2,
+    output wire VIN_3,
+    output wire VIN_4
 );
 
     // ========================================================
@@ -32,7 +32,7 @@ module Ultrasound_system (
     wire        pll_areset_w;  // Reset_PLL -> PLL
     wire        pll_locked_w;  // PLL -> (unused)
 
-    wire [17:0] rx_threshold_w; // 用于连接 UART_RX 输出的新阈值
+    wire [17:0] rx_threshold_w;  // 用于连接 UART_RX 输出的新阈值
 
     wire [11:0] ad_data_w;  // AD -> FIFO
     wire        ad_done_w;  // AD -> FIFO (wrreq)
@@ -46,6 +46,12 @@ module Ultrasound_system (
     wire        processing_done_w;  // Echo -> UART_TX
 
     wire        rs232_tx_line;  // UART_TX -> TBS_TX
+    wire        batch_start_w;
+    wire        batch_end_w;
+    wire [ 2:0] cmd_from_rx;  // 从 UART_RX 出来的原始命令
+    wire [ 2:0] cmd_to_order;  // 经过处理后给 Order_4s 的命令
+    wire        tx_main_line;  // 原 UART_TX_8bit 的输出
+    wire        tx_ack_line;  // 新模块的 ACK 输出
 
     // ========================================================
     // Module Instantiations
@@ -59,27 +65,39 @@ module Ultrasound_system (
         .rs232_out(rs232_rx_line)
     );
 
-    // 2. UART Receiver (Command Parser)
     UART_RX inst3_UART_RX (
-        .clk_50M      (clk_50M),
-        .rst_n        (rst_n),
-        .rs232_rx     (rs232_rx_line),     // 新接口信号
-        .corr_threshold(rx_threshold_w),   // 接收到的完整3字节数据
-        .frame_valid  (rx_frame_valid_w),  // 帧有效脉冲
-        .command      (command_bus)        // 提取出的命令 (取自第3字节低3位)
+        .clk_50M       (clk_50M),
+        .rst_n         (rst_n),
+        .rs232_rx      (rs232_rx_line),
+        .corr_threshold(rx_threshold_w),
+        .frame_valid   (rx_frame_valid_w),
+        // .command      (command_bus)    <-- 原连接（删除或注释）
+        .command       (cmd_from_rx)        // <-- 改为连接到新定义的中间信号
+    );
+    // 【新增】应答与启动延时控制器
+    Ack_Start_Controller inst_Ack_Ctl (
+        .clk        (clk_50M),
+        .rst_n      (rst_n),
+        .rx_cmd_in  (cmd_from_rx),   // 输入：来自 RX
+        .sys_cmd_out(cmd_to_order),  // 输出：去往 Order_4s
+        .ack_tx_line(tx_ack_line)    // 输出：ACK TX 信号
     );
 
     // 3. Main Control Logic (State Machine)
     Order_4s inst4_Order_4s (
         .clk_50M        (clk_50M),
         .rst_n          (rst_n),
-        .command        (command_bus),
+        //.command        (command_bus),
+        .command        (cmd_to_order),
         .sys_start_pulse(sys_start_pulse_w),
-        .start          (),                   // unused
-        .start_test     (),                   // unused
+        .start          (),
+        .start_test     (),
         .Exc_start      (launch_cmd_w),
         .relay          (relay),
-        .AD_start       (AD_start_w)
+        .AD_start       (AD_start_w),
+        // 【新增】
+        .batch_start    (batch_start_w),
+        .batch_end      (batch_end_w)
     );
 
     // 4. Ultrasound Launch Module
@@ -164,10 +182,16 @@ module Ultrasound_system (
     UART_TX_8bit inst12_UART_TX (
         .clk_50M        (clk_50M),
         .rst_n          (rst_n),
+        // 【新增/修改接口】
+        .batch_start    (batch_start_w),
+        .batch_end      (batch_end_w),
         .echo_tof       (echo_tof_w),
         .processing_done(processing_done_w),
-        .rs232_tx       (rs232_tx_line)
+        .rs232_tx       (tx_main_line)
+        //.rs232_tx(rs232_tx_line)
     );
+    // 合并主数据 TX 和 应答 TX
+    assign rs232_tx_line = tx_main_line & tx_ack_line;
 
     // 11. TBS Transmitter Interface
     TBS_TX inst2_TBS_TX (
