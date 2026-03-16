@@ -74,13 +74,14 @@ module Ultrasound_system (
         // .command      (command_bus)    <-- 原连接（删除或注释）
         .command       (cmd_from_rx)        // <-- 改为连接到新定义的中间信号
     );
-    // 【新增】应答与启动延时控制器
+    //应答
     Ack_Start_Controller inst_Ack_Ctl (
-        .clk        (clk_50M),
-        .rst_n      (rst_n),
-        .rx_cmd_in  (cmd_from_rx),   // 输入：来自 RX
-        .sys_cmd_out(cmd_to_order),  // 输出：去往 Order_4s
-        .ack_tx_line(tx_ack_line)    // 输出：ACK TX 信号
+        .clk           (clk_50M),
+        .rst_n         (rst_n),
+        .rx_frame_valid(rx_frame_valid_w),  // 【新增连线】：接入帧有效脉冲
+        .rx_cmd_in     (cmd_from_rx),
+        .sys_cmd_out   (cmd_to_order),
+        .ack_tx_line   (tx_ack_line)
     );
 
     // 3. Main Control Logic (State Machine)

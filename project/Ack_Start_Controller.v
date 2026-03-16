@@ -5,6 +5,7 @@ module Ack_Start_Controller #(
 )(
     input  wire       clk,
     input  wire       rst_n,
+    input  wire       rx_frame_valid,// 【新增】来自 UART_RX 的帧有效脉冲
     input  wire [2:0] rx_cmd_in,     // 来自 UART_RX 的原始命令(脉冲信号)
     output reg  [2:0] sys_cmd_out,   // 发送给 Order_4s 的命令(脉冲信号)
     output reg        ack_tx_line    // 模块独占的 TX 输出线
@@ -20,12 +21,12 @@ module Ack_Start_Controller #(
     // 状态定义
     localparam S_IDLE       = 3'd0; // 空闲
     localparam S_SEND_ACK   = 3'd1; // 发送应答
-    localparam S_WAIT_DELAY = 3'd2; // 等待延时 (仅针对启动命令)
+    localparam S_WAIT_DELAY = 3'd2; // 等待延时 (针对启动命令)
     localparam S_TRIGGER    = 3'd3; // 触发系统启动/命令
 
     reg [2:0]  state;
     reg [31:0] delay_cnt;
-    reg [2:0]  latched_cmd;         // 新增：用于锁存上位机发来的命令脉冲
+    reg [2:0]  latched_cmd; // 用于锁存上位机发来的命令脉冲
 
     // UART 发送相关寄存器
     reg [12:0] baud_cnt;
@@ -57,9 +58,9 @@ module Ack_Start_Controller #(
                     baud_cnt    <= 0;
                     sys_cmd_out <= 3'd0; // 确保向 Order_4s 输出的平时为0
                     
-                    if (rx_cmd_in != 3'd0) begin
-                        // 拦截到任何有效命令，锁存并开始应答流程
-                        latched_cmd <= rx_cmd_in;
+                    // 【关键修改】不管收到的命令是什么内容，只要通过了校验(帧有效)，就启动应答
+                    if (rx_frame_valid) begin
+                        latched_cmd <= rx_cmd_in; // 若是阈值命令，此处锁存的将是0，不会导致误触发系统
                         state       <= S_SEND_ACK;
                         byte_idx    <= 0;
                         bit_idx     <= 0;
@@ -84,8 +85,7 @@ module Ack_Start_Controller #(
                                 delay_cnt <= 0;
                             end
                             else begin
-                                byte_idx <= byte_idx + 1;
-                                // 准备下一个字节
+                                byte_idx <= byte_idx + 1; // 准备下一个字节
                                 case(byte_idx + 1)
                                     1: tx_shift <= 8'hAA;
                                     2: tx_shift <= 8'hAA;
@@ -101,7 +101,7 @@ module Ack_Start_Controller #(
                     
                     // 输出 TX 引脚
                     case(bit_idx)
-                        0: ack_tx_line <= 1'b0;        // Start
+                        0: ack_tx_line <= 1'b0; // Start
                         1: ack_tx_line <= tx_shift[0];
                         2: ack_tx_line <= tx_shift[1];
                         3: ack_tx_line <= tx_shift[2];
@@ -110,7 +110,7 @@ module Ack_Start_Controller #(
                         6: ack_tx_line <= tx_shift[5];
                         7: ack_tx_line <= tx_shift[6];
                         8: ack_tx_line <= tx_shift[7];
-                        9: ack_tx_line <= 1'b1;        // Stop
+                        9: ack_tx_line <= 1'b1; // Stop
                     endcase
                 end
 
@@ -120,7 +120,7 @@ module Ack_Start_Controller #(
                 S_WAIT_DELAY: begin
                     ack_tx_line <= 1'b1;
                     if (latched_cmd == 3'd3) begin
-                        // 如果是启动测量命令，延时 10ms
+                        // 如果是“开始测量”命令 (0x43 映射为 3)，延时 10ms
                         if (delay_cnt >= DELAY_CYCLES) begin
                             state <= S_TRIGGER;
                         end
@@ -129,7 +129,7 @@ module Ack_Start_Controller #(
                         end
                     end 
                     else begin
-                        // 如果是其他模式切换命令，无需延时，直接触发执行
+                        // 如果是模式切换或阈值设置命令，无需延时，直接触发执行
                         state <= S_TRIGGER;
                     end
                 end
@@ -139,9 +139,10 @@ module Ack_Start_Controller #(
                 // ------------------------------------------------
                 S_TRIGGER: begin
                     // 将锁存的命令输出给 Order_4s
+                    // (若是阈值设置命令，输出0；如果是控制命令，输出1/2/3)
                     sys_cmd_out <= latched_cmd;
                     // 下一个时钟周期即回到 S_IDLE，从而产生单周期脉冲
-                    state <= S_IDLE; 
+                    state <= S_IDLE;
                 end
                 
                 default: state <= S_IDLE;
