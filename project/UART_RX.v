@@ -156,7 +156,14 @@ module UART_RX (
                             // 2. 根据标志位分发数据
                             case (pkg_flag)
                                 4'b0100: begin // 标志位 0：控制命令
-                                    command <= pkg_data[2:0]; // 取低3位作为命令
+                                    if (data_buf[2] == 8'h40)
+                                        command <= 3'd2; // 强制映射给 Order_4s 的垂直度(断电)命令
+                                    else if (data_buf[2] == 8'h41)
+                                        command <= 3'd1; // 强制映射给 Order_4s 的井径命令
+                                    else if (data_buf[2] == 8'h43)
+                                        command <= 3'd3; // 强制映射给 Order_4s 的开始命令
+                                    else
+                                        command <= 3'd0;
                                 end
                                 4'b0101: begin // 标志位 1：设置阈值
                                     corr_threshold <= pkg_data[17:0]; // 取低18位作为阈值
