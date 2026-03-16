@@ -4,18 +4,19 @@
 //              Top-level module connecting all sub-modules.
 // ============================================================
 module Ultrasound_system (
-    input  wire clk_50M,
-    input  wire rst_n,
-    input  wire TBS_in,
-    input  wire ad_in,    // AD7352 MISO
-    output wire TBS_out,
-    output wire ad_cs,
-    output wire ad_clk,
-    output wire relay,
-    output wire VIN_1,
-    output wire VIN_2,
-    output wire VIN_3,
-    output wire VIN_4
+    input  wire       clk_50M,
+    input  wire       rst_n,
+    input  wire       TBS_in,
+    input  wire       ad_in,    // AD7352 MISO
+    output wire       TBS_out,
+    output wire       ad_cs,
+    output wire       ad_clk,
+    output wire       relay,
+    output wire       VIN_1,
+    output wire       VIN_2,
+    output wire       VIN_3,
+    output wire       VIN_4,
+    output wire [3:0] led_out
 );
 
     // ========================================================
@@ -168,6 +169,12 @@ module Ultrasound_system (
         .echo_tof       (echo_tof_w),
         .echo_peak      (echo_peak_w),
         .processing_done(processing_done_w)
+    );
+    water_led instled_water_led (
+        .clk_50M(clk_50M),
+        .rst_n  (rst_n),
+        .led_out(led_out)
+
     );
 
     // 10. UART Transmitter (Result Upload)
