@@ -12,7 +12,7 @@ hc_output/
 *.jam
 *.jbc
 *.ekp
-*.jic
+#*.jic
 *.rbf
 *.sopcinfo
 *.html
