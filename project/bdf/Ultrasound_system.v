@@ -29,7 +29,7 @@ module Ultrasound_system (
     wire        launch_cmd_w;  // Order_4s -> Launch Module
     wire        AD_start_w;  // Order_4s -> AD Module
 
-    wire        clk_45M_w;  // PLL -> AD
+    wire        clk_30M_w;  // PLL -> AD
     wire        pll_areset_w;  // Reset_PLL -> PLL
     wire        pll_locked_w;  // PLL -> (unused)
 
@@ -120,18 +120,18 @@ module Ultrasound_system (
         .areset (pll_areset_w)
     );
 
-    // 6. PLL IP Core (Generates 45MHz for AD)
+    // 6. PLL IP Core (Generates 30MHz for AD)
     pll_ip inst6_pll (
         .inclk0(clk_50M),
         .areset(pll_areset_w),
-        .c0    (clk_45M_w),
+        .c0    (clk_30M_w),
         .locked(pll_locked_w)
     );
 
     // 7. AD Controller (AD7352)
     AD inst9_AD (
         .clk_50M (clk_50M),
-        .clk_45M (clk_45M_w),
+        .clk_30M (clk_30M_w),
         .rst_n   (rst_n),
         .ad_in   (ad_in),
         .AD_start(AD_start_w),
@@ -144,7 +144,7 @@ module Ultrasound_system (
     // 8. FIFO Buffer
     // Note: rdclk is connected to clk_50M in BDF
     fifo inst_fifo (
-        .wrclk  (clk_45M_w),
+        .wrclk  (clk_30M_w),
         .wrreq  (ad_done_w),
         .data   (ad_data_w),
         .rdclk  (clk_50M),

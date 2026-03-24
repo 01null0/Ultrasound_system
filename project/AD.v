@@ -1,6 +1,6 @@
 module AD (
     input             clk_50M,    // 系统时钟，用于捕捉AD_start
-    input             clk_45M,    // PLL产生的45MHz，用于AD转换
+    input             clk_30M,    // PLL产生的30MHz，用于AD转换
     input             rst_n,
     input             ad_in,      // AD7352 SDATA_A/B (MISO)
     input             AD_start,   // 来自Order_4s的启动信号 (50MHz域)
@@ -12,15 +12,15 @@ module AD (
 );
 
     // ============================================================
-    // 1. 跨时钟域信号处理 (CDC: 50MHz -> 45MHz)
+    // 1. 跨时钟域信号处理 (CDC: 50MHz -> 30MHz)
     // ============================================================
     reg start_latch_50M;
-    reg conversion_ack_45M;      // 45M域反馈的完成信号
+    reg conversion_ack_30M;      // 30M域反馈的完成信号
     reg conversion_ack_sync_50M; // 同步回50M域的反馈信号
     reg conversion_ack_sync_50M_r;
 
     // 在 50MHz 域锁存启动信号
-    // 只要 AD_start 来一个脉冲，start_latch_50M 就拉高，直到 45M 域完成任务
+    // 只要 AD_start 来一个脉冲，start_latch_50M 就拉高，直到 30M 域完成任务
     always @(posedge clk_50M or negedge rst_n) begin
         if(!rst_n) begin
             start_latch_50M <= 1'b0;
@@ -28,7 +28,7 @@ module AD (
             conversion_ack_sync_50M_r <= 1'b0;
         end else begin
             // 同步反馈信号到50M域
-            conversion_ack_sync_50M <= conversion_ack_45M;
+            conversion_ack_sync_50M <= conversion_ack_30M;
             conversion_ack_sync_50M_r <= conversion_ack_sync_50M;
 
             if (AD_start) 
@@ -38,29 +38,29 @@ module AD (
         end
     end
 
-    // 将锁存的启动信号同步到 45MHz 域
-    reg start_sync_45M_r1, start_sync_45M_r2;
-    always @(posedge clk_45M or negedge rst_n) begin
+    // 将锁存的启动信号同步到 30MHz 域
+    reg start_sync_30M_r1, start_sync_30M_r2;
+    always @(posedge clk_30M or negedge rst_n) begin
         if(!rst_n) begin
-            start_sync_45M_r1 <= 1'b0;
-            start_sync_45M_r2 <= 1'b0;
+            start_sync_30M_r1 <= 1'b0;
+            start_sync_30M_r2 <= 1'b0;
         end else begin
-            start_sync_45M_r1 <= start_latch_50M;
-            start_sync_45M_r2 <= start_sync_45M_r1;
+            start_sync_30M_r1 <= start_latch_50M;
+            start_sync_30M_r2 <= start_sync_30M_r1;
         end
     end
     
-    // 生成45M域的单周期启动触发
-    reg start_pulse_45M_prev;
-    wire start_trigger_45M = start_sync_45M_r2 && !start_pulse_45M_prev;
+    // 生成30M域的单周期启动触发
+    reg start_pulse_30M_prev;
+    wire start_trigger_30M = start_sync_30M_r2 && !start_pulse_30M_prev;
     
-    always @(posedge clk_45M or negedge rst_n) begin
-        if(!rst_n) start_pulse_45M_prev <= 1'b0;
-        else start_pulse_45M_prev <= start_sync_45M_r2;
+    always @(posedge clk_30M or negedge rst_n) begin
+        if(!rst_n) start_pulse_30M_prev <= 1'b0;
+        else start_pulse_30M_prev <= start_sync_30M_r2;
     end
 
     // ============================================================
-    // 2. AD采样状态机 (45MHz Domain)
+    // 2. AD采样状态机 (30MHz Domain)
     // ============================================================
     // AD7352时序: CS拉低 -> 14-16个SCLK -> CS拉高
     // 数据在SCLK下降沿更新，我们在上升沿采样
@@ -73,12 +73,12 @@ module AD (
     reg [4:0] bit_cnt;      // 位计数器 (0-15)
     reg [15:0] shift_reg;   // 移位寄存器
 
-    // ad_clk 直接由 45MHz 时钟驱动
+    // ad_clk 直接由 30MHz 时钟驱动
     // 注意：AD7352在CS为高时忽略SCLK，所以让它一直跑也没关系，
-    // 但为了信号质量，我们可以在CS有效时才让SCLK翻转（或直接输出clk_45M）
-    assign ad_clk = (ad_cs == 1'b0) ? clk_45M : 1'b1; 
+    // 但为了信号质量，我们可以在CS有效时才让SCLK翻转（或直接输出clk_30M）
+    assign ad_clk = (ad_cs == 1'b0) ? clk_30M : 1'b1; 
 
-    always @(posedge clk_45M or negedge rst_n) begin
+    always @(posedge clk_30M or negedge rst_n) begin
         if(!rst_n) begin
             state <= S_IDLE;
             ad_cs <= 1'b1;
@@ -86,14 +86,14 @@ module AD (
             ad_out <= 12'd0;
             bit_cnt <= 5'd0;
             shift_reg <= 16'd0;
-            conversion_ack_45M <= 1'b0;
+            conversion_ack_30M <= 1'b0;
         end else begin
             case(state)
                 S_IDLE: begin// 等待启动信号
                     ad_done <= 1'b0;
-                    conversion_ack_45M <= 1'b0; // 允许下一次握手
+                    conversion_ack_30M <= 1'b0; // 允许下一次握手
                     
-                    if(start_trigger_45M) begin
+                    if(start_trigger_30M) begin
                         state <= S_CONV;
                         ad_cs <= 1'b0;   // CS 拉低，开始转换
                         bit_cnt <= 5'd0;
@@ -104,7 +104,7 @@ module AD (
                 end
 
                 S_CONV: begin// 进行数据采样
-                    // 在45M上升沿采样数据（此时也是ad_clk上升沿）
+                    // 在30M上升沿采样数据（此时也是ad_clk上升沿）
                     // AD7352在下降沿推出数据，上升沿采样最稳
                     shift_reg <= {shift_reg[14:0], ad_in};
                     
@@ -133,10 +133,10 @@ module AD (
                     // 这里为了保险，按照通用时序，建议取 shift_reg[13:2]。
                     // 但为了保持与您旧代码逻辑一致（如果您旧代码验证过位序），
                     // 我暂时保留 shift_reg[11:0]，如果数据数值不对，请改为 shift_reg[13:2]。
-                    ad_out <= shift_reg[13:2]; 
+                    ad_out <= { ~shift_reg[13], shift_reg[12:2] };
                     
                     ad_done <= 1'b1;     // 产生一个周期的高电平用于FIFO写
-                    conversion_ack_45M <= 1'b1; // 通知50M域清除锁存
+                    conversion_ack_30M <= 1'b1; // 通知50M域清除锁存
                 end
                 
                 default: state <= S_IDLE;
