@@ -75,11 +75,11 @@ module fifo (
 	defparam
 		dcfifo_component.intended_device_family = "Cyclone IV E",
 		dcfifo_component.lpm_hint = "MAXIMUM_DEPTH=8192",
-		dcfifo_component.lpm_numwords = 8192,
+		dcfifo_component.lpm_numwords = 16384,
 		dcfifo_component.lpm_showahead = "OFF",
 		dcfifo_component.lpm_type = "dcfifo",
 		dcfifo_component.lpm_width = 12,
-		dcfifo_component.lpm_widthu = 13,
+		dcfifo_component.lpm_widthu = 14,
 		dcfifo_component.overflow_checking = "ON",
 		dcfifo_component.rdsync_delaypipe = 4,
 		dcfifo_component.underflow_checking = "ON",
@@ -98,7 +98,7 @@ endmodule
 // Retrieval info: PRIVATE: AlmostFullThr NUMERIC "-1"
 // Retrieval info: PRIVATE: CLOCKS_ARE_SYNCHRONIZED NUMERIC "0"
 // Retrieval info: PRIVATE: Clock NUMERIC "4"
-// Retrieval info: PRIVATE: Depth NUMERIC "8192"
+// Retrieval info: PRIVATE: Depth NUMERIC "16384"
 // Retrieval info: PRIVATE: Empty NUMERIC "1"
 // Retrieval info: PRIVATE: Full NUMERIC "1"
 // Retrieval info: PRIVATE: INTENDED_DEVICE_FAMILY STRING "Cyclone IV E"
@@ -127,11 +127,11 @@ endmodule
 // Retrieval info: LIBRARY: altera_mf altera_mf.altera_mf_components.all
 // Retrieval info: CONSTANT: INTENDED_DEVICE_FAMILY STRING "Cyclone IV E"
 // Retrieval info: CONSTANT: LPM_HINT STRING "MAXIMUM_DEPTH=8192"
-// Retrieval info: CONSTANT: LPM_NUMWORDS NUMERIC "8192"
+// Retrieval info: CONSTANT: LPM_NUMWORDS NUMERIC "16384"
 // Retrieval info: CONSTANT: LPM_SHOWAHEAD STRING "OFF"
 // Retrieval info: CONSTANT: LPM_TYPE STRING "dcfifo"
 // Retrieval info: CONSTANT: LPM_WIDTH NUMERIC "12"
-// Retrieval info: CONSTANT: LPM_WIDTHU NUMERIC "13"
+// Retrieval info: CONSTANT: LPM_WIDTHU NUMERIC "14"
 // Retrieval info: CONSTANT: OVERFLOW_CHECKING STRING "ON"
 // Retrieval info: CONSTANT: RDSYNC_DELAYPIPE NUMERIC "4"
 // Retrieval info: CONSTANT: UNDERFLOW_CHECKING STRING "ON"

@@ -129,7 +129,7 @@ module Echo_Correlation (
         end
         else if (fifo_data_valid) begin // 仅在数据有效时更新逻辑
             // 采样窗口
-            if (global_cnt > 20'd100 && global_cnt < BLIND_WINDOW_SAMPLES) begin
+            if (global_cnt > 20'd50 && global_cnt < BLIND_WINDOW_SAMPLES) begin
                 if (abs_sum > max_noise_blind)
                     max_noise_blind <= abs_sum;
             end
@@ -204,7 +204,7 @@ module Echo_Correlation (
     
     // 设定一个合理的停止计数，例如 2000 (需大于实际回波窗口长度)
     // 通常只需要处理前几千个点（取决于最大测量距离）。
-    localparam PROCESS_END_COUNT = 16'd5700; // 采集点数阈值，需根据实际情况调整
+    localparam PROCESS_END_COUNT = 16'd8700; // 采集点数阈值，需根据实际情况调整
 
     always @(posedge clk_50M or negedge rst_n) begin
         if (!rst_n) begin
